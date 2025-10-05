@@ -2,6 +2,7 @@ class TaskFlow {
     constructor() {
         this.tasks = this.loadTasks();
         this.taskIdCounter = this.getNextTaskId();
+        this.currentCategoryFilter = 'all';
         this.initializeApp();
         this.bindEvents();
         this.renderTasks();
@@ -29,6 +30,13 @@ class TaskFlow {
             if (e.key === 'Enter') {
                 this.addTask();
             }
+        });
+
+        // Category filter buttons
+        document.querySelectorAll('.category-filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.setCategoryFilter(e.target.dataset.category);
+            });
         });
 
         // Focus on input when page loads
@@ -122,8 +130,9 @@ class TaskFlow {
     renderTasks() {
         const tasksList = document.getElementById('tasksList');
         const emptyState = document.getElementById('emptyState');
+        const filteredTasks = this.getFilteredTasks();
 
-        if (this.tasks.length === 0) {
+        if (filteredTasks.length === 0) {
             tasksList.style.display = 'none';
             emptyState.style.display = 'block';
             return;
@@ -138,7 +147,6 @@ class TaskFlow {
             if (a.completed !== b.completed) {
                 return a.completed - b.completed;
             }
-
             // Then sort by priority (high to low)
             const priorityDiff = this.getPriorityValue(b.priority) - this.getPriorityValue(a.priority);
             if (priorityDiff !== 0) {
@@ -186,6 +194,49 @@ class TaskFlow {
         // Update task count in header
         const taskCount = document.getElementById('taskCount');
         taskCount.textContent = `${totalTasks} ${totalTasks === 1 ? 'task' : 'tasks'}`;
+
+        // Update category statistics
+        this.updateCategoryStats();
+    }
+
+    updateCategoryStats() {
+        const categoryStats = document.getElementById('categoryStats');
+        const categories = ['work', 'personal', 'shopping', 'health', 'study'];
+
+        const categoryData = categories.map(category => {
+            const total = this.tasks.filter(task => task.category === category).length;
+            const completed = this.tasks.filter(task => task.category === category && task.completed).length;
+            const pending = total - completed;
+
+            return {
+                category,
+                total,
+                completed,
+                pending,
+                icon: this.getCategoryIcon(category),
+                color: this.getCategoryColor(category)
+            };
+        }).filter(data => data.total > 0);
+
+        categoryStats.innerHTML = categoryData.map(data => `
+            <div class="category-stat-item">
+                <div class="category-stat-header">
+                    <span class="category-icon">${data.icon}</span>
+                    <span class="category-name">${data.category.charAt(0).toUpperCase() + data.category.slice(1)}</span>
+                    <span class="category-total">${data.total}</span>
+                </div>
+                <div class="category-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${data.total ? (data.completed / data.total) * 100 : 0}%; background-color: ${data.color}"></div>
+                    </div>
+                    <span class="progress-text">${data.completed}/${data.total} completed</span>
+                </div>
+            </div>
+        `).join('');
+
+        if (categoryData.length === 0) {
+            categoryStats.innerHTML = '<p class="no-categories">No tasks with categories yet.</p>';
+        }
     }
 
     saveTasks() {
@@ -311,6 +362,16 @@ class TaskFlow {
 
     getTaskStats() {
         const now = new Date();
+        const categoryBreakdown = {};
+
+        ['work', 'personal', 'shopping', 'health', 'study'].forEach(category => {
+            categoryBreakdown[category] = {
+                total: this.tasks.filter(t => t.category === category).length,
+                completed: this.tasks.filter(t => t.category === category && t.completed).length,
+                pending: this.tasks.filter(t => t.category === category && !t.completed).length
+            };
+        });
+
         const stats = {
             total: this.tasks.length,
             completed: this.tasks.filter(t => t.completed).length,
