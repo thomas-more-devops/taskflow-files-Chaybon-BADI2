@@ -1,0 +1,14 @@
+{
+  "name": "multi-stage-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "echo 'App aan het bouwen...' && sleep 2",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
