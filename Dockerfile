@@ -1,29 +1,37 @@
-# Gebruik Node.js 22 Alpine als basis image
-FROM node:22-alpine
+# ---------- STAGE 1: Builder ----------
+FROM node:22-alpine AS builder
 
-# Metadata - Information about image
-LABEL maintainer="your-email@example.com"
-LABEL version="1.0"
-LABEL description="TaskFlow application"
-
-# Stel /app in als werkdirectory
+# Werkdirectory binnen container
 WORKDIR /app
 
-# Kopieer package.json en package-lock.json (indien aanwezig) voor layer caching
+# Alleen package files kopiëren (zorgt voor layer caching)
 COPY package*.json ./
 
-# Install Dependencies
-RUN npm ci
-# npm ci = clean install (faster, more reliable than npm install)
-# --only=production = skip dev dependencies
+# Dependencies installeren (npm ci = snellere, schonere install)
+RUN npm ci --only=production
 
-# Kopieer de rest van de applicatiecode
+# Kopieer nu de volledige code
 COPY . .
-# Copies everything except .dockerignore entries
 
-# Expose poort 3000
+# ---------- STAGE 2: Production ----------
+FROM node:22-alpine AS production
+
+# Maak een niet-root user aan voor veiligheid
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Kopieer node_modules en app code uit de builder stage
+COPY --from=builder /app /app
+
+# Zorg dat de user de juiste rechten heeft
+RUN chown -R appuser:appgroup /app
+
+# Wissel naar non-root user
+USER appuser
+
+# Expose poort (optioneel, enkel informatief)
 EXPOSE 3000
 
-# Start de applicatie
+# Start command
 CMD ["npm", "start"]
-# What runs when container starts
