@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build: ./backend
+    environment:
+      - DB_HOST=database
+      - DB_NAME=taskflow
+    depends_on:
+      - database
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  database:
+    image: mongo:8.0.15
+    volumes:
+      - taskflow-data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  taskflow-data:

@@ -1,35 +1,10 @@
+/* eslint-disable max-lines-per-function */
+/* eslint-disable indent */
 class TaskFlow {
-    // Oud:
-    // constructor() {
-    //     this.tasks = this.loadTasks();
-    //     this.taskIdCounter = this.getNextTaskId();
-
-    //     // Filter and search state
-    //     this.currentFilter = 'all';
-    //     this.currentCategoryFilter = 'all';
-    //     this.currentSort = 'priority';
-    //     this.currentSearch = '';
-
-    //     // Categories configuration
-    //     this.categories = {
-    //         work: { name: 'Work', icon: '💼', color: '#3182ce' },
-    //         personal: { name: 'Personal', icon: '🏠', color: '#805ad5' },
-    //         shopping: { name: 'Shopping', icon: '🛒', color: '#38a169' },
-    //         health: { name: 'Health', icon: '🏥', color: '#e53e3e' },
-    //         study: { name: 'Study', icon: '📚', color: '#d69e2e' }
-    //     };
-
-    //     this.initializeApp();
-    //     this.bindEvents();
-    //     this.renderTasks();
-    //     this.updateStats();
-    // }
-
-    // Nieuw:
     constructor() {
-        this.tasks = [];  // Initialiseer leeg, zal async laden
+        this.tasks = [];
         this.taskIdCounter = 1;
-        
+
         // Filter and search state
         this.currentFilter = 'all';
         this.currentCategoryFilter = 'all';
@@ -47,16 +22,7 @@ class TaskFlow {
 
         this.initializeApp();
         this.bindEvents();
-
-        // Laad taken asynchroon na de setup
-        this.initializeData();
-    }
-
-    // Voeg deze nieuwe methode toe na de constructor (rond regel 26):
-    async initializeData() {
-        this.tasks = await this.loadTasks();
-        this.renderTasks();
-        this.updateStats();
+        this.initializeData(); // Call async initialization
     }
 
     initializeApp() {
@@ -149,6 +115,12 @@ class TaskFlow {
         taskInput.focus();
     }
 
+    async initializeData() {
+        this.tasks = await this.loadTasks();
+        this.renderTasks();
+        this.updateStats();
+    }
+
     // Task Management Methods
     async addTask() {
         const taskInput = document.getElementById('taskInput');
@@ -167,44 +139,33 @@ class TaskFlow {
             return;
         }
 
-        // const newTask = {
-        //     id: this.taskIdCounter++,
-        //     text: taskText,
-        //     priority: priority,
-        //     category: category,
-        //     dueDate: dueDate || null,
-        //     completed: false,
-        //     createdAt: new Date().toISOString(),
-        //     completedAt: null
-        // };
-
-        // this.tasks.push(newTask);
-        // this.saveTasks();
+        // Replace with:
         try {
             const response = await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                title: taskText, // API verwacht 'title'
-                priority: priority,
-                category: category,
-                dueDate: dueDate || null
+                    title: taskText, // API expects 'title'
+                    priority: priority,
+                    category: category,
+                    dueDate: dueDate || null
                 })
             });
             const savedTask = await response.json();
 
-            // Map de opgeslagen task naar ons frontend formaat
+            // Map the saved task to our frontend format
             const newTask = {
                 ...savedTask,
-                text: savedTask.title // Map 'title' terug naar 'text'
+                text: savedTask.title // Map 'title' back to 'text'
             };
 
             this.tasks.push(newTask);
-            } catch (error) {
-                console.error('Error adding task:', error);
-                this.showNotification('Failed to add task!', 'error');
-                return;
-            }
+        } catch (error) {
+            console.error('Error adding task:', error);
+            this.showNotification('Failed to add task!', 'error');
+            return;
+        }
+
         this.renderTasks();
         this.updateStats();
         this.updateSearchResults();
@@ -219,122 +180,81 @@ class TaskFlow {
         this.showNotification('Task added successfully!', 'success');
     }
 
-    // deleteTask(taskId) {
-    //     if (confirm('Are you sure you want to delete this task?')) {
-    //         this.tasks = this.tasks.filter(task => task.id !== taskId);
-    //         this.saveTasks();
-    //         this.renderTasks();
-    //         this.updateStats();
-    //         this.updateSearchResults();
-    //         this.showNotification('Task deleted successfully!', 'success');
-    //     }
-    // }
-
     async deleteTask(taskId) {
         if (confirm('Are you sure you want to delete this task?')) {
             try {
-            await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-            this.tasks = this.tasks.filter(task => task.id !== taskId);
-            this.renderTasks();
-            this.updateStats();
-            this.updateSearchResults();
-            this.showNotification('Task deleted successfully!', 'success');
+                await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                this.tasks = this.tasks.filter(task => task.id !== taskId);
+                this.renderTasks();
+                this.updateStats();
+                this.updateSearchResults();
+                this.showNotification('Task deleted successfully!', 'success');
             } catch (error) {
-            console.error('Error deleting task:', error);
-            this.showNotification('Failed to delete task!', 'error');
+                console.error('Error deleting task:', error);
+                this.showNotification('Failed to delete task!', 'error');
             }
         }
     }
-
-    // toggleTask(taskId) {
-    //     const task = this.tasks.find(task => task.id === taskId);
-    //     if (task) {
-    //         task.completed = !task.completed;
-    //         task.completedAt = task.completed ? new Date().toISOString() : null;
-    //         this.saveTasks();
-    //         this.renderTasks();
-    //         this.updateStats();
-    //         this.updateSearchResults();
-
-    //         const message = task.completed ? 'Task completed! 🎉' : 'Task marked as pending';
-    //         this.showNotification(message, 'success');
-    //     }
-    // }
 
     async toggleTask(taskId) {
         const task = this.tasks.find(task => task.id === taskId);
         if (task) {
             const updatedTask = {
-            ...task,
-            title: task.text, // Map 'text' naar 'title' voor API
-            completed: !task.completed,
-            completedAt: !task.completed ? new Date().toISOString() : null
+                ...task,
+                title: task.text, // Map 'text' to 'title' for API
+                completed: !task.completed,
+                completedAt: !task.completed ? new Date().toISOString() : null
             };
 
             try {
-            await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedTask)
-            });
+                await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedTask)
+                });
 
-            task.completed = updatedTask.completed;
-            task.completedAt = updatedTask.completedAt;
-            this.renderTasks();
-            this.updateStats();
-            this.updateSearchResults();
+                task.completed = updatedTask.completed;
+                task.completedAt = updatedTask.completedAt;
+                this.renderTasks();
+                this.updateStats();
+                this.updateSearchResults();
 
-            const message = task.completed ? 'Task completed! 🎉' : 'Task marked as pending';
-            this.showNotification(message, 'success');
+                const message = task.completed ? 'Task completed! 🎉' : 'Task marked as pending';
+                this.showNotification(message, 'success');
             } catch (error) {
-            console.error('Error toggling task:', error);
-            this.showNotification('Failed to update task!', 'error');
+                console.error('Error toggling task:', error);
+                this.showNotification('Failed to update task!', 'error');
             }
         }
     }
-
-    // editTask(taskId) {
-    //     const task = this.tasks.find(task => task.id === taskId);
-    //     if (task) {
-    //         const newText = prompt('Edit task:', task.text);
-    //         if (newText !== null && newText.trim() !== '') {
-    //             task.text = newText.trim();
-    //             this.saveTasks();
-    //             this.renderTasks();
-    //             this.updateStats();
-    //             this.updateSearchResults();
-    //             this.showNotification('Task updated successfully!', 'success');
-    //         }
-    //     }
-    // }
 
     async editTask(taskId) {
         const task = this.tasks.find(task => task.id === taskId);
         if (task) {
             const newText = prompt('Edit task:', task.text);
             if (newText !== null && newText.trim() !== '') {
-            const updatedTask = {
-                ...task,
-                title: newText.trim(), // Map naar 'title' voor API
-                text: newText.trim()
-            };
+                const updatedTask = {
+                    ...task,
+                    title: newText.trim(), // Map to 'title' for API
+                    text: newText.trim()
+                };
 
-            try {
-                await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedTask)
-                });
+                try {
+                    await fetch(`/api/tasks/${taskId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updatedTask)
+                    });
 
-                task.text = newText.trim();
-                this.renderTasks();
-                this.updateStats();
-                this.updateSearchResults();
-                this.showNotification('Task updated successfully!', 'success');
-            } catch (error) {
-                console.error('Error updating task:', error);
-                this.showNotification('Failed to update task!', 'error');
-            }
+                    task.text = newText.trim();
+                    this.renderTasks();
+                    this.updateStats();
+                    this.updateSearchResults();
+                    this.showNotification('Task updated successfully!', 'success');
+                } catch (error) {
+                    console.error('Error updating task:', error);
+                    this.showNotification('Failed to update task!', 'error');
+                }
             }
         }
     }
@@ -774,49 +694,24 @@ class TaskFlow {
         dueDateStats.innerHTML = statsHTML || '<p class="no-stats">All tasks have optimal due dates!</p>';
     }
 
-    // Oud (localStorage):
-    // saveTasks() {
-    //     try {
-    //         localStorage.setItem('taskflow_tasks', JSON.stringify(this.tasks));
-    //         localStorage.setItem('taskflow_counter', this.taskIdCounter.toString());
-    //     } catch (error) {
-    //         console.error('Failed to save tasks:', error);
-    //         this.showNotification('Failed to save tasks. Please check your browser storage.', 'error');
-    //     }
-    // }
-
-    // Nieuw (niet meer nodig - we bewaren via API calls):
+    // Storage Methods
     saveTasks() {
-    // Deze methode is niet meer nodig omdat we via de API opslaan
-    // Maar we houden hem om code die hem aanroept niet te breken
+        try {
+            localStorage.setItem('taskflow_tasks', JSON.stringify(this.tasks));
+            localStorage.setItem('taskflow_counter', this.taskIdCounter.toString());
+        } catch (error) {
+            console.error('Failed to save tasks:', error);
+            this.showNotification('Failed to save tasks. Please check your browser storage.', 'error');
+        }
     }
 
-    // Oud (localStorage)
-    // loadTasks() {
-    //     try {
-    //         const saved = localStorage.getItem('taskflow_tasks');
-    //         const tasks = saved ? JSON.parse(saved) : [];
-    //         // Ensure all tasks have all required properties (for backward compatibility)
-    //         return tasks.map(task => ({
-    //             ...task,
-    //             priority: task.priority || 'medium',
-    //             category: task.category || 'personal',
-    //             dueDate: task.dueDate || null
-    //         }));
-    //     } catch (error) {
-    //         console.error('Failed to load tasks:', error);
-    //         return [];
-    //     }
-    // }
-
-    // Nieuw (API):
     async loadTasks() {
         try {
             const response = await fetch('/api/tasks');
             const tasks = await response.json();
             return tasks.map(task => ({
                 ...task,
-                text: task.title, // Map API's 'title' naar frontend's 'text'
+                text: task.title, // Map API's 'title' to frontend's 'text'
                 priority: task.priority || 'medium',
                 category: task.category || 'personal',
                 dueDate: task.dueDate || null

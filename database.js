@@ -7,9 +7,9 @@ const DB_NAME = process.env.DB_NAME || 'taskflow';
 const connectDB = async () => {
   try {
     await mongoose.connect(`mongodb://${DB_HOST}:${DB_PORT}/${DB_NAME}`);
-    console.log(`MongoDB verbonden: ${DB_HOST}:${DB_PORT}/${DB_NAME}`);
+    console.log(`MongoDB connected: ${DB_HOST}:${DB_PORT}/${DB_NAME}`);
   } catch (error) {
-    console.error('MongoDB verbindingsfout:', error);
+    console.error('MongoDB connection error:', error);
     process.exit(1);
   }
 };

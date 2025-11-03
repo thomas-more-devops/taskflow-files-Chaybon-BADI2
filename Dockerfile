@@ -1,37 +1,59 @@
-# ---------- STAGE 1: Builder ----------
+# ============================================
+# STAGE 1: Builder - Install all dependencies
+# ============================================
 FROM node:22-alpine AS builder
 
-# Werkdirectory binnen container
+# Set working directory
 WORKDIR /app
 
-# Alleen package files kopiëren (zorgt voor layer caching)
+# Copy dependency files first for layer caching
 COPY package*.json ./
 
-# Dependencies installeren (npm ci = snellere, schonere install)
-RUN npm ci --only=production
+# Install ONLY production dependencies in builder
+RUN npm ci --omit=dev && \
+    npm cache clean --force
 
-# Kopieer nu de volledige code
+# Copy application code
 COPY . .
 
-# ---------- STAGE 2: Production ----------
+# ============================================
+# STAGE 2: Production - Minimal runtime image
+# ============================================
 FROM node:22-alpine AS production
 
-# Maak een niet-root user aan voor veiligheid
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Metadata
+LABEL maintainer="your-email@example.com"
+LABEL version="1.0"
+LABEL description="TaskFlow application - Multi-stage production build"
 
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Set working directory
 WORKDIR /app
 
-# Kopieer node_modules en app code uit de builder stage
-COPY --from=builder /app /app
+# Copy package files
+COPY --chown=nodejs:nodejs package*.json ./
 
-# Zorg dat de user de juiste rechten heeft
-RUN chown -R appuser:appgroup /app
+# Copy node_modules from builder (already production-only)
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 
-# Wissel naar non-root user
-USER appuser
+# Copy application files from builder
+COPY --from=builder --chown=nodejs:nodejs /app/server.js ./
+COPY --from=builder --chown=nodejs:nodejs /app/database.js ./
+COPY --from=builder --chown=nodejs:nodejs /app/models ./models
+COPY --from=builder --chown=nodejs:nodejs /app/public ./public
 
-# Expose poort (optioneel, enkel informatief)
+# Switch to non-root user
+USER nodejs
+
+# Expose application port
 EXPOSE 3000
 
-# Start command
+# Health check (optional but recommended)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+# Start application
 CMD ["npm", "start"]
