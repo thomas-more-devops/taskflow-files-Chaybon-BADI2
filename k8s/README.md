@@ -49,7 +49,7 @@ kubectl delete namespace taskflow
 ```
 
 ## Team Leden
-- [Lijst je teamleden]
+- Chaybon Verlooy
 
 ## Ondervonden Problemen
-- [Beschrijf problemen en oplossingen]
+- Niet van toepassing
