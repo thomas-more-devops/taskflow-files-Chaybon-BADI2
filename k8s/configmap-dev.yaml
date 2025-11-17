@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-config
+  namespace: taskflow-dev
+  labels:
+    app: taskflow
+    environment: development
+data:
+  NODE_ENV: "development"
+  LOG_LEVEL: "debug"
+  DB_NAME: "taskflow_dev"
+  API_TIMEOUT: "5000"
+  ENABLE_DEBUG_LOGS: "true"
