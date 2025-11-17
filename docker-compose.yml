@@ -13,6 +13,8 @@ services:
 
   backend:
     build: ./backend
+    ports:
+      - "3000:3000"
     environment:
       - DB_HOST=database
       - DB_NAME=taskflow
