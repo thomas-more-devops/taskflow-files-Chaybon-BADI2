@@ -1,0 +1,219 @@
+name: TaskFlow CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =========================
+  # Job 1: Continuous Integration
+  # =========================
+  ci:
+    name: Test and Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # Alleen nodig als je Node in root gebruikt; anders mag dit blijven staan,
+      # het faalt niet je job (continue-on-error)
+      - name: Setup Node.js (indien nodig)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies (indien van toepassing)
+        run: |
+          if [ -f package-lock.json ] || [ -f package.json ]; then
+            npm ci
+          else
+            echo "Geen root package.json gevonden, skip npm ci"
+          fi
+        continue-on-error: true
+
+      - name: Run linting (indien van toepassing)
+        run: |
+          if npm run | grep -q "lint"; then
+            npm run lint
+          else
+            echo "Geen lint script gevonden, skip lint"
+          fi
+        continue-on-error: true
+
+      - name: Validate Backend Dockerfile
+        run: |
+          echo "Checking backend Dockerfile syntax..."
+          docker build --no-cache -t taskflow-backend:ci-test ./backend
+
+      - name: Validate Frontend Dockerfile
+        run: |
+          echo "Checking frontend Dockerfile syntax..."
+          docker build --no-cache -t taskflow-frontend:ci-test ./frontend
+
+      - name: Set up KIND cluster voor validatie
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: validation
+          wait: 30s
+
+      - name: Validate Kubernetes manifests
+        run: |
+          echo "Validating K8s manifests met kubectl --dry-run=client..."
+          kubectl apply --dry-run=client -f k8s/
+
+  # =========================
+  # Job 2: Build en Push naar GHCR
+  # =========================
+  build-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =========================
+  # Job 3: Deploy naar KIND
+  # =========================
+  deploy:
+    name: Deploy to Kubernetes (KIND)
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create KIND cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: taskflow
+          wait: 30s
+
+      - name: Verify cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and load images to KIND
+        run: |
+          set -e
+          BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+          FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+
+          echo "Pulling images..."
+          docker pull "$BACKEND_IMAGE"
+          docker pull "$FRONTEND_IMAGE"
+
+          echo "Loading images into KIND cluster..."
+          kind load docker-image "$BACKEND_IMAGE" --name taskflow
+          kind load docker-image "$FRONTEND_IMAGE" --name taskflow
+
+      - name: Update deployment manifests
+        run: |
+          BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+          FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+
+          echo "Patching backend-deployment.yaml met image $BACKEND_IMAGE"
+          sed -i "s|taskflow-backend:v1.0.0|$BACKEND_IMAGE|g" k8s/backend-deployment.yaml
+
+          echo "Patching frontend-deployment.yaml met image $FRONTEND_IMAGE"
+          sed -i "s|taskflow-frontend:v1.0.0|$FRONTEND_IMAGE|g" k8s/frontend-deployment.yaml
+
+          # Zorg dat de cluster niet vast zit aan imagePullPolicy: Never
+          sed -i "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|g" k8s/backend-deployment.yaml || true
+          sed -i "s|imagePullPolicy: Never|imagePullPolicy: IfNotPresent|g" k8s/frontend-deployment.yaml || true
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap-dev.yaml
+          kubectl apply -f k8s/mongodb-pvc.yaml
+          kubectl apply -f k8s/mongodb-deployment.yaml
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl apply -f k8s/frontend-deployment.yaml
+
+      - name: Wait for deployments
+        run: |
+          kubectl wait --for=condition=available --timeout=120s deployment/backend -n taskflow-dev
+          kubectl wait --for=condition=available --timeout=120s deployment/frontend -n taskflow-dev
+
+      - name: Verify deployment
+        run: |
+          echo "=== PODS ==="
+          kubectl get pods -n taskflow-dev
+          echo "=== SERVICES ==="
+          kubectl get services -n taskflow-dev
+          echo "=== BACKEND DEPLOYMENT ==="
+          kubectl describe deployment backend -n taskflow-dev || true
+          echo "=== FRONTEND DEPLOYMENT ==="
+          kubectl describe deployment frontend -n taskflow-dev || true
+
+      - name: Check application health
+        run: |
+          set -e
+          echo "Finding backend pod..."
+          BACKEND_POD=$(kubectl get pods -n taskflow-dev -l app=backend -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing backend health on pod: $BACKEND_POD"
+          kubectl exec -n taskflow-dev "$BACKEND_POD" -- wget -qO- http://localhost:3000/api/health || echo "Health check endpoint may not bestaan"
+
+          echo "Finding frontend pod..."
+          FRONTEND_POD=$(kubectl get pods -n taskflow-dev -l app=frontend -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing frontend output on pod: $FRONTEND_POD"
+          kubectl exec -n taskflow-dev "$FRONTEND_POD" -- sh -c "wget -qO- http://localhost:80 | head -n 20"
